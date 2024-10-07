@@ -76,10 +76,10 @@ class AutoAudioRecorder:
 
 class IGNUS_Assistant:
     def __init__(self, info_path):
-        self.aai_api_key = "95c764dcf46a466cab4ad03e02021975"  # AssemblyAI API key
-        self.gemini_api_key = "AIzaSyDyLIPEaDmQRIdCeIfqINc-c-_RHQRGYK0"  # Google AI API key
-        self.elevenlabs_api_key = "sk_1482506e6814c1a5b3ade41ac8e14f37ecca058e2023f9f0"  # Replace with your Eleven Labs API key
-        self.elevenlabs_voice_id = "zFLlkq72ysbq1TWC0Mlx"  # Replace with your chosen voice ID
+        self.aai_api_key = ""  # AssemblyAI API key
+        self.gemini_api_key = ""  # Google AI API key
+        self.elevenlabs_api_key = ""  # Replace with your Eleven Labs API key
+        self.elevenlabs_voice_id = ""  # Replace with your chosen voice ID
 
 
         aai.settings.api_key = self.aai_api_key
