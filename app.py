@@ -8,11 +8,13 @@ import time
 import wave
 import pyaudio
 import requests
-import io
 import numpy as np
 
+from dotenv import load_dotenv
+load_dotenv()
+
 class AutoAudioRecorder:
-    def __init__(self, threshold=300, silence_limit=1, silence_threshold=50, chunk_size=1024, sample_rate=44100):
+    def __init__(self, threshold=300, silence_limit=1.5, silence_threshold=50, chunk_size=1024, sample_rate=44100):
         self.threshold = threshold
         self.silence_limit = silence_limit
         self.silence_threshold = silence_threshold
@@ -76,11 +78,10 @@ class AutoAudioRecorder:
 
 class IGNUS_Assistant:
     def __init__(self, info_path):
-        self.aai_api_key = ""  # AssemblyAI API key
-        self.gemini_api_key = ""  # Google AI API key
-        self.elevenlabs_api_key = ""  # Replace with your Eleven Labs API key
-        self.elevenlabs_voice_id = ""  # Replace with your chosen voice ID
-
+        self.aai_api_key = os.getenv("ASSEMBLY_AI_KEY")
+        self.gemini_api_key = os.getenv("GEMINAI_API_KEY")
+        self.elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
+        self.elevenlabs_voice_id = "zFLlkq72ysbq1TWC0Mlx"  # Replace with your chosen voice ID
 
         aai.settings.api_key = self.aai_api_key
         genai.configure(api_key=self.gemini_api_key)
@@ -236,7 +237,7 @@ class IGNUS_Assistant:
 
 
 def main():
-    assistant = IGNUS_Assistant("E:\PROJECTS\Calling_Bot\Ignus_database.pdf")
+    assistant = IGNUS_Assistant(r"E:\PROJECTS\Calling_Bot\Ignus_database.pdf")
 
     greeting = "Hello! This is a call from IIT Jodhpur regarding our upcoming cultural fest, Ignus. Do you have a moment to talk about it?"
     assistant.generate_audio(greeting)
@@ -256,17 +257,6 @@ def main():
         if "thanks for your time! hope to see you at the fest. feel free to reach out with any questions!" in ai_response.lower():
             break
 
-    # Final query check
-    assistant.generate_audio("Before we end the call, do you have any final questions about Ignus?")
-    final_response = input("Final response from the person: ")
-    assistant.stop_audio()
-    if final_response.strip().lower() not in ['no', 'nope', 'not really', 'i am good']:
-        assistant.generate_ai_response(final_response)
-
-    assistant.generate_audio("Thank you for your time. Have a great day!")
-    time.sleep(2)  # Give some time for the last audio to play
-    assistant.stop_audio()
-
     interest = assistant.generate_summary()  
     return interest
 
@@ -281,10 +271,3 @@ if __name__ == "__main__":
         assistant.generate_audio("Someone from our team will contact you in the upcoming days for further process.")
         time.sleep(5)  # Give some time for the last audio to play
         assistant.stop_audio()
-
-    # Final cleanup
-    if os.path.exists("response.mp3"):
-        try:
-            os.remove("response.mp3")
-        except PermissionError:
-            print("Couldn't delete response.mp3. Please delete it manually.")
