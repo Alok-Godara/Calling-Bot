@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Calling Assistant Bot is an automated audio-based conversational assistant designed for IIT Jodhpur's annual cultural fest, **IGNUS**. The bot interacts with potential attendees over audio, providing fest details and gauging interest in ticket purchases. This project incorporates audio recording, transcription, AI-generated responses, and text-to-speech (TTS) capabilities to deliver a smooth user experience.
+The Calling Assistant Bot is an automated audio-based conversational assistant designed for IIT Jodhpur's annual cultural fest, **IGNUS**. The bot will interact with potential attendees over audio, providing fest details and gauging interest in ticket purchases. This project incorporates audio recording, transcription, AI-generated responses, and text-to-speech (TTS) capabilities to deliver a smooth user experience.
 
 ## Features
 
