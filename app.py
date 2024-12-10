@@ -7,11 +7,75 @@ import threading
 import time
 import wave
 import pyaudio
-import requests
 import numpy as np
+from google.oauth2.credentials import Credentials
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from google.oauth2.credentials import Credentials
+from datetime import datetime
+from gtts import gTTS  # Import gTTS
+from pydub import AudioSegment
+from pydub.playback import play
 
 from dotenv import load_dotenv
 load_dotenv()
+
+
+#----------------------------------------------------------------------------------------------------------------------------------------------
+
+class ConversationLogger:
+    def __init__(self, username):
+        self.username = username
+        self.conversation = []
+        self.start_time = datetime.now()
+        
+        # Create logs directory if it doesn't exist
+        os.makedirs('conversation_logs', exist_ok=True)
+        
+        # Generate filename
+        date_str = self.start_time.strftime("%Y%m%d_%H%M%S")  # Added time to make filename unique
+        self.filename = f"conversation_logs/{self.username}_{date_str}.txt"
+        
+        # Create the file and write header
+        with open(self.filename, 'w', encoding='utf-8') as f:
+            f.write(f"Conversation Log for {username}\n")
+            f.write(f"Started at: {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write("="*50 + "\n\n")
+    
+    def add_entry(self, speaker, message):
+        """Add a new entry to the conversation log"""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        entry = f"[{timestamp}] {speaker}: {message}\n"
+        self.conversation.append(entry)
+        
+        # Immediately write to file for real-time logging
+        with open(self.filename, 'a', encoding='utf-8') as f:
+            f.write(entry)
+    
+    def save_summary(self, interest, reason):
+        """Save the conversation summary including all dialogue"""
+        with open(self.filename, 'a', encoding='utf-8') as f:
+            # Add a separator before the summary
+            f.write("\n" + "="*50 + "\n")
+            f.write("CONVERSATION SUMMARY\n")
+            f.write("="*50 + "\n\n")
+            
+            # Add conversation statistics
+            f.write(f"Date: {self.start_time.strftime('%Y-%m-%d')}\n")
+            f.write(f"Start Time: {self.start_time.strftime('%H:%M:%S')}\n")
+            f.write(f"End Time: {datetime.now().strftime('%H:%M:%S')}\n")
+            f.write(f"Total Messages: {len(self.conversation)}\n")
+            f.write(f"Interest Level: {interest}\n")
+            f.write(f"Reason: {reason}\n\n")
+            
+    
+    def get_complete_log(self):
+        """Return the complete conversation as a string"""
+        log = []
+        with open(self.filename, 'r', encoding='utf-8') as f:
+            log = f.readlines()
+        return ''.join(log)
+#----------------------------------------------------------------------------------------------------------------------------------------------
 
 class AutoAudioRecorder:
     def __init__(self, threshold=300, silence_limit=1.5, silence_threshold=50, chunk_size=1024, sample_rate=44100):
@@ -76,22 +140,78 @@ class AutoAudioRecorder:
         self.stream.close()
         self.p.terminate()
 
+#----------------------------------------------------------------------------------------------------------------------------------------------
+
+class GoogleSheetsManager:
+    def __init__(self, spreadsheet_id):
+        self.spreadsheet_id = spreadsheet_id
+        # Load credentials from service account file
+        self.credentials = service_account.Credentials.from_service_account_file(
+            r'E:\PROJECTS\Calling_Bot\Condfenditial\ignus-bot-8d4cdf53c2a4.json',  # Replace with your service account key path
+            scopes=['https://www.googleapis.com/auth/spreadsheets']
+        )
+        self.service = build('sheets', 'v4', credentials=self.credentials)
+        
+    def get_next_contact(self):
+        """Get the next unprocessed contact from the sheet"""
+        result = self.service.spreadsheets().values().get(
+            spreadsheetId=self.spreadsheet_id,
+            range='Sheet1!A2:E'  # Adjusted range to include summary column
+        ).execute()
+        
+        values = result.get('values', [])
+        for idx, row in enumerate(values, start=2):  # Start from 2 to account for header row
+            if len(row) < 4 or not row[3]:  # Check if status column is empty
+                return {
+                    'row_number': idx,
+                    'name': row[0],
+                    'phone': row[1]
+                }
+        return None
+
+    def update_contact_status(self, row_number, interest, reason):
+        """Update the contact's status and reason in the sheet"""
+        # Update interest status in column D and reason in column E
+        range_name = f'Sheet1!D{row_number}:E{row_number}'
+        values = [[interest, reason]]
+        
+        body = {
+            'values': values
+        }
+        
+        try:
+            result = self.service.spreadsheets().values().update(
+                spreadsheetId=self.spreadsheet_id,
+                range=range_name,
+                valueInputOption='RAW',
+                body=body
+            ).execute()
+            print(f'Sheet updated: {result.get("updatedCells")} cells updated.')
+            return True
+        except Exception as e:
+            print(f'Error updating sheet: {str(e)}')
+            return False
+
+#----------------------------------------------------------------------------------------------------------------------------------------------
+
 class IGNUS_Assistant:
-    def __init__(self, info_path):
+    def __init__(self, info_path, contact_name=""):
         self.aai_api_key = os.getenv("ASSEMBLY_AI_KEY")
         self.gemini_api_key = os.getenv("GEMINAI_API_KEY")
-        self.elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
-        self.elevenlabs_voice_id = "zFLlkq72ysbq1TWC0Mlx"  # Replace with your chosen voice ID
 
         aai.settings.api_key = self.aai_api_key
         genai.configure(api_key=self.gemini_api_key)
 
         self.fest_info = self.load_info(info_path)
-        self.model = genai.GenerativeModel('gemini-1.5-pro')
+        self.model = genai.GenerativeModel('gemini-1.5-flash-002')
         self.chat = self.model.start_chat(history=[])
-
-        system_prompt = f"""You are a public relations representative for IIT Jodhpur's cultural fest, Ignus. Your primary objective is to inform individuals about the fest and assess their interest in purchasing tickets by talking with them such that you are on a call.
         
+        self.contact_name = contact_name
+        self.logger = ConversationLogger(contact_name)
+
+        system_prompt = f"""You are a public relations representative for IIT Jodhpur's cultural fest, Ignus. You are talking to {self.contact_name}. Your primary objective is to inform them about the fest and assess their interest in purchasing tickets by talking with them such that you are on a call.
+        Just normally talk to the other person rather than giving descriptive text in bracketts explaning yourself.
+                
         Key Instructions:
         Use only this information provided about the fest: {self.fest_info}.
         Avoid using any external information or personal opinions.
@@ -123,7 +243,9 @@ class IGNUS_Assistant:
         Thank them for their time, regardless of their interest level by saying "Thanks for your time! Hope to see you at the fest. Feel free to reach out with any questions!".
         Remember to keep the conversation flowing naturally while adhering strictly to these guidelines.
         
-        Incase: If you think user donot want to talk or they are busy at this moment or they have finished talking to you i.e. they are saying bye or related terms just thank them for their time, regardless of their interest level by saying "Thanks for your time! Hope to see you at the fest. Feel free to reach out with any questions!"
+        Incase: If you think user donot want to talk or they are busy at this moment or they have finished talking to you i.e. they are saying bye or related terms just thank them for their time, regardless of their interest level by just saying "Thanks for your time! Hope to see you at the fest. Feel free to reach out with any questions!" only.
+        
+        Incase: If User doesnot respond or "no speech detected" messege is sent to you ask the user to say again as you were unable to understand.
         """
 
         self.chat.send_message(system_prompt)
@@ -144,61 +266,59 @@ class IGNUS_Assistant:
                 return file.read()
 
     def transcribe_file(self, file_path):
+        """Transcribe audio file and handle empty transcriptions"""
         config = aai.TranscriptionConfig(language_code="en")
         transcriber = aai.Transcriber()
         transcript = transcriber.transcribe(file_path)
+        
+        # Handle empty or None transcription
+        if not transcript.text or transcript.text.strip() == "":
+            return "No speech detected"  # Changed from just "No" for better logging
         return transcript.text
 
     def generate_ai_response(self, user_input):
+        # First, log the user's input if it's not "No speech detected"
+        if user_input != "No speech detected":
+            self.logger.add_entry("User", user_input)
+        
+        # Generate and log AI response
         response = self.chat.send_message(user_input)
         ai_response = response.text
-
+        self.logger.add_entry("AI", ai_response)
+        
         print(f"AI: {ai_response}")
         self.generate_audio(ai_response)
         return ai_response
 
-
     def generate_audio(self, text):
-        url = f"https://api.elevenlabs.io/v1/text-to-speech/{self.elevenlabs_voice_id}"
-        
-        headers = {
-            "Accept": "audio/mpeg",
-            "Content-Type": "application/json",
-            "xi-api-key": self.elevenlabs_api_key
-        }
-        
-        data = {
-            "text": text,
-            "model_id": "eleven_monolingual_v1",
-            "voice_settings": {
-                "stability": 0.5,
-                "similarity_boost": 0.5
-            }
-        }
-        
-        response = requests.post(url, json=data, headers=headers)
-        
-        if response.status_code == 200:
-            with open("response.mp3", "wb") as f:
-                f.write(response.content)
+        try:
+            # Create gTTS object
+            tts = gTTS(text=text, lang='en', slow=False)
+            
+            # Save the audio file
+            tts.save("response.mp3")
             
             # Play audio in a separate thread
             self.audio_thread = threading.Thread(target=self.play_audio)
             self.audio_thread.start()
-        else:
-            print(f"Error generating audio: {response.status_code}")
-            print(response.text)
+        except Exception as e:
+            print(f"Error generating audio: {str(e)}")
 
-    def play_audio(self):
-        self.audio_playing = True
-        pygame.mixer.music.load("response.mp3")
-        pygame.mixer.music.play()
-        while pygame.mixer.music.get_busy() and self.audio_playing:
-            pygame.time.Clock().tick(10)
-        pygame.mixer.music.stop()
+
+    def play_audio(self, speed=1.2):
+        # Load the audio file
+        audio = AudioSegment.from_mp3("response.mp3")
+        
+        # Change the frame rate to adjust speed
+        # Note: This will also affect pitch
+        faster_audio = audio._spawn(audio.raw_data, overrides={
+            "frame_rate": int(audio.frame_rate * speed)
+        })
+        
+        # Play the modified audio
+        play(faster_audio)
         
         # Delete the audio file after playing
-        pygame.mixer.music.unload()
         try:
             os.remove("response.mp3")
         except PermissionError:
@@ -217,57 +337,105 @@ class IGNUS_Assistant:
             print("Couldn't delete response.mp3. Please delete it manually if it persists.")
 
     def generate_summary(self):
-        summary_prompt = """Based on the conversation, do you think the person is interested in buying tickets for IGNUS?
-        Respond with 'Yes' if interested, 'No' if not interested, or 'Maybe' if unclear.
-        Then provide a brief explanation for your decision."""
-
-        response = self.chat.send_message(summary_prompt)
-        summary = response.text
-        interest = summary.split()[0].lower()
-
-        print("\nSummary:")
-        print(summary)
-
-        return interest
+        """Generate a concise summary of the conversation in two steps"""
+        # Step 1: Get interest level
+        interest_prompt = """Based on our conversation, provide a single word indicating interest level.
+        ONLY use: YES, NO, or MAYBE
+        
+        Format your response exactly like this:
+        Interest: [YES/NO/MAYBE]"""
+        
+        interest_response = self.chat.send_message(interest_prompt)
+        interest = interest_response.text.split(':')[1].strip().lower()
+        
+        # Step 2: Get reason for interest level
+        reason_prompt = f"""Based on our conversation and the interest level of {interest.upper()}, 
+        provide a brief explanation (max 200 letters) for this interest level.
+        Focus on key factors that influenced their decision or interest level.
+        
+        Format your response exactly like this:
+        Reason: [Your 2-3 line explanation]"""
+        
+        reason_response = self.chat.send_message(reason_prompt)
+        reason = reason_response.text.split(':', 1)[1].strip() if ':' in reason_response.text else "No reason provided"
+        
+        return interest, reason
 
     def record_audio(self):
         recorder = AutoAudioRecorder()
         recorder.run()
         return 1
 
+#----------------------------------------------------------------------------------------------------------------------------------------------        
+        
 
 def main():
-    assistant = IGNUS_Assistant(r"E:\PROJECTS\Calling_Bot\Ignus_database.pdf")
-
-    greeting = "Hello! This is a call from IIT Jodhpur regarding our upcoming cultural fest, Ignus. Do you have a moment to talk about it?"
-    assistant.generate_audio(greeting)
-
+    # Initialize the Google Sheets manager
+    sheets_manager = GoogleSheetsManager('1FLI34AfrIOnewMRBjXr44NOdOpHm5Z848H4pHLtsFmc')
+    
     while True:
-        print("\nStart Speaking if you want to want to give input or interrupt the call.")
-        
-        user_input = assistant.record_audio()  # No argument here
-        
-        # Stop the current audio playback
-        if user_input :
-            assistant.stop_audio()
-            transcription = assistant.transcribe_file("user_response.wav")  # The file name is fixed
-            print(f"Transcription: {transcription}")
-            ai_response = assistant.generate_ai_response(transcription)
-
-        if "thanks for your time! hope to see you at the fest. feel free to reach out with any questions!" in ai_response.lower():
+        # Get the next contact to process
+        contact = sheets_manager.get_next_contact()
+        if not contact:
+            print("No more contacts to process")
             break
+            
+        print(f"\nProcessing contact: {contact['name']}")
+        
+        # Initialize the assistant
+        assistant = IGNUS_Assistant(
+            r"E:\PROJECTS\Calling_Bot\Ignus_database.pdf",
+            contact_name=contact['name']
+        )
 
-    interest = assistant.generate_summary()  
-    return interest
+        # Initial greeting
+        greeting = f"Hello {contact['name']}! This is a call from IIT Jodhpur regarding our upcoming cultural fest, Ignus. Do you have a moment to talk about it?"
+        assistant.logger.add_entry("AI", greeting)
+        assistant.generate_audio(greeting)
 
-# Run the main function
+        conversation_active = True
+        while conversation_active:
+            print("\nStart Speaking if you want to give input or interrupt the call.")
+            
+            user_input = assistant.record_audio()
+            
+            if user_input:
+                assistant.stop_audio()
+                transcription = assistant.transcribe_file("user_response.wav")
+                
+                # Print and log the transcription
+                print(f"Transcription: {transcription}")
+                
+                # Generate and log AI response
+                ai_response = assistant.generate_ai_response(transcription)
+                
+                # Check for conversation end
+                if "thanks for your time! hope to see you at the fest. feel free to reach out with any questions!" in ai_response.lower():
+                    conversation_active = False
+
+        # Generate and log summary
+        interest, reason = assistant.generate_summary()
+        interest_value = interest.upper()
+        
+        # Save conversation summary
+        assistant.logger.save_summary(interest_value, reason)
+        
+        # Update sheet
+        sheets_manager.update_contact_status(
+            contact['row_number'],
+            interest_value,
+            reason
+        )
+        
+        # Print final status
+        print(f"\nCompleted processing contact: {contact['name']}")
+        print(f"Interest: {interest_value}")
+        print(f"Reason: {reason}")
+        
+        print(f"Conversation log saved to: {assistant.logger.filename}")
+        
+        # Small delay between contacts
+        time.sleep(2)
+
 if __name__ == "__main__":
-    result = main()
-    print(f"\nFinal Result: The person is {'interested' if result == 'yes' else 'not interested' if result == 'no' else 'possibly interested'} in buying tickets for IGNUS.")
-
-    if result == 'yes':
-        print("AI: Someone from our team will contact you in the upcoming days for further process.")
-        assistant = IGNUS_Assistant("dummy_path")  # Create a dummy instance just for audio
-        assistant.generate_audio("Someone from our team will contact you in the upcoming days for further process.")
-        time.sleep(5)  # Give some time for the last audio to play
-        assistant.stop_audio()
+    main()
