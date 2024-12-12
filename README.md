@@ -145,6 +145,15 @@ The **Calling Assistant Bot** is powered by advanced AI technologies and works i
 
 ---
 
+## 🎥 Demo Video
+
+Check out a quick demo of the **Calling Assistant Bot** in action! Click the video below to watch:
+
+[![Voice Bot Demo Video](https://img.youtube.com/vi/VIDEO_ID/0.jpg)](Voice_Bot_Demo_Video.mp4 "Voice Bot Demo Video")
+
+
+---
+
 ### Example Flow
 
 - **Bot**: "Hello! This is a call from IIT Jodhpur regarding our upcoming cultural fest, Ignus. Can we take a moment to talk about it?"
