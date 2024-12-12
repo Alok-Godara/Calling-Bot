@@ -147,10 +147,9 @@ The **Calling Assistant Bot** is powered by advanced AI technologies and works i
 
 ## 🎥 Demo Video
 
-Check out a quick demo of the **Calling Assistant Bot** in action! Click the video below to watch:
+Check out a quick demo of the **Calling Assistant Bot** in action:
 
-[![Voice Bot Demo Video](https://img.youtube.com/vi/VIDEO_ID/0.jpg)](Voice_Bot_Demo_Video.mp4 "Voice Bot Demo Video")
-
+[![Voice Bot Demo Video](https://via.placeholder.com/800x450.png?text=Watch+Demo)](https://github.com/Alok-Godara/Calling-Bot/blob/main/Voice_Bot_Demo_VIdeo.mp4?raw=true "Voice Bot Demo Video")
 
 ---
 
