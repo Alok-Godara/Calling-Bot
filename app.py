@@ -11,15 +11,15 @@ import numpy as np
 from google.oauth2.credentials import Credentials
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from google.oauth2.credentials import Credentials
 from datetime import datetime
 from gtts import gTTS  # Import gTTS
 from pydub import AudioSegment
 from pydub.playback import play
-
+import certifi
+import ssl
 from dotenv import load_dotenv
+os.environ["SSL_CERT_FILE"] = certifi.where()
 load_dotenv()
-
 
 #----------------------------------------------------------------------------------------------------------------------------------------------
 
